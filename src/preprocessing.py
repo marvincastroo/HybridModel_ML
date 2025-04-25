@@ -10,23 +10,30 @@ class Preprocessing:
                  std_dvt_context = False,
                  distance_parameter = True,
                  datasets_dict = None,
-                 remove_nan = True
+                 remove_nan = True,
+                 test_design_name = None,
+                 verbose = 1
                  ):
 
         self.train_data = train
         self.test_data = test
         self.corner = corner
+        self.test_name = test_design_name
         self.context_features = context_features
         self.std_dvt_context = std_dvt_context
         self.distance_parameter = distance_parameter
         self.remove_nan = remove_nan
+        self.verbose = verbose
+        self.train_df = None
+        self.test_df = None
         self.initial_parameter_list = [' Fanout', ' Cap', ' Slew', ' Delay', 'X_drive', 'Y_drive', 'X_sink', 'Y_sink',
                                        'C_drive', 'C_sink', 'X_context', 'Y_context', 'σ(X)_context', 'σ(Y)_context',
                                        'Drive_cell_size', 'Sink_cell_size', 'Label Delay']
         self.datasets_dict = datasets_dict
         self.processed_datasets = {}
-
-        self.train_data, self.test_data = self.preprocessing()
+        print(f"{self.test_name=}")
+        self.train_df, self.test_df = self.preprocessing()
+        self.__print_info()
 
 
     def calculate_distance_parameter(self, *dfs):
@@ -49,6 +56,7 @@ class Preprocessing:
         return tuple(result)
 
     def preprocessing(self):
+
         if not self.context_features:
             self.initial_parameter_list.remove("X_context")
             self.initial_parameter_list.remove("Y_context")
@@ -56,17 +64,24 @@ class Preprocessing:
             self.initial_parameter_list.remove("σ(X)_context")
             self.initial_parameter_list.remove("σ(Y)_context")
 
-        if self.train_data is not None and self.test_data is not None:
-            train_df = pd.read_csv(self.train_data)[self.initial_parameter_list]
-            test_df = pd.read_csv(self.test_data)[self.initial_parameter_list]
+        if self.train_data is not None:
+            self.train_df = pd.read_csv(self.train_data)[self.initial_parameter_list]
+        if self.test_data is not None:
+            self.test_df = pd.read_csv(self.test_data)
+            if self.test_name is not None and 'Design' in self.test_df:
+                self.test_df = self.test_df[self.test_df['Design'] == self.test_name]
+            self.test_df = self.test_df[self.initial_parameter_list]
 
             if self.distance_parameter:
-                train_df, test_df = self.calculate_distance_parameter(train_df, test_df)
-                if self.remove_nan:
-                    train_df = train_df.dropna()
-                    test_df = test_df.dropna()
+                self.train_df, self.test_df = self.calculate_distance_parameter(self.train_df, self.test_df)
+            if self.remove_nan:
+                self.train_df = self.train_df.dropna()
+                self.test_df = self.test_df.dropna()
 
-            return train_df, test_df
+
+
+
+            return self.train_df, self.test_df
 
         elif self.files_dict is not None:
             for output_name, input_file in self.datasets_dict.items():
@@ -102,3 +117,36 @@ class Preprocessing:
         else:
             raise ValueError("train or test datasets missing, or processed_datasets (dict) is None ")
 
+    def __print_messages(self, message, message_level):
+        if message_level <= self.verbose:
+            print(message)
+
+    # __print_messages(self, 2, "hello")
+
+    def __print_info(self):
+        self.__print_messages("Processing class initiated", 1)
+        self.__print_messages(f"\t-{self.train_data=}", 2)
+        self.__print_messages(f"\t-{self.test_data=}", 2)
+        self.__print_messages(f"\t-{self.corner=}", 2)
+        self.__print_messages(f"\t-{self.context_features=}", 2)
+        self.__print_messages(f"\t-{self.std_dvt_context=}", 2)
+        self.__print_messages(f"\t-{self.remove_nan=}", 2)
+        self.__print_messages(f"\t-{self.test_name=}", 2)
+        self.__print_messages(f"\t-{self.datasets_dict=}", 2)
+
+        self.__print_messages("\t\tTrain Dataset:", 2)
+        self.__print_messages(f"\t\t\tTrain Shape: {self.train_df.shape}:", 2)
+        self.__print_messages(f"\t\t{self.train_df.head(5)}:", 2)
+        self.__print_messages("\t\tTest Dataset:", 2)
+        self.__print_messages(f"\t\t\tTest Shape: {self.test_df.shape}:", 2)
+        self.__print_messages(f"\t\t{self.test_df.head(5)}:", 2)
+    # train = None,
+    # test = None,
+    # corner = None,
+    # context_features = False,
+    # std_dvt_context = False,
+    # distance_parameter = True,
+    # datasets_dict = None,
+    # remove_nan = True,
+    # test_design_name = None,
+    # verbose = 1
