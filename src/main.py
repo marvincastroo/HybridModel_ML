@@ -28,7 +28,7 @@ y_test = test_data1.iloc[:, -1]
 
 X_train, _, y_train, _ = train_test_split(X, y, random_state=10, test_size=0.2)
 """
-tree params={'ccp_alpha': 0.0, 'criterion': 'squared_error', 'max_depth': None, 'max_features': None, 'max_leaf_nodes': 
+tree params={'ccp_alphgit sa': 0.0, 'criterion': 'squared_error', 'max_depth': None, 'max_features': None, 'max_leaf_nodes': 
 None, 'min_impurity_decrease': 0.0, 'min_samples_leaf': 1, 'min_samples_split': 2, 'min_weight_fraction_leaf': 0.0, 
 'random_state': None, 'splitter': 'best'}
 """

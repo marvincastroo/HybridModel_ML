@@ -1,152 +1,205 @@
 import numpy as np
 import pandas as pd
+import pickle
+from typing import Literal, Optional
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 class Preprocessing:
     def __init__(self,
-                 train = None,
-                 test = None,
-                 corner = None,
+                 corner: Optional[Literal["fast", "slow"]] = None,
+                 feature_scaling: Optional[Literal["standard", "minmax"]] = None,
                  context_features = False,
                  std_dvt_context = False,
                  distance_parameter = True,
-                 datasets_dict = None,
                  remove_nan = True,
                  test_design_name = None,
-                 verbose = 1
+                 verbose = 1,
                  ):
 
-        self.train_data = train
-        self.test_data = test
+
         self.corner = corner
+        self.feature_scaling = feature_scaling
         self.test_name = test_design_name
         self.context_features = context_features
         self.std_dvt_context = std_dvt_context
         self.distance_parameter = distance_parameter
         self.remove_nan = remove_nan
         self.verbose = verbose
-        self.train_df = None
-        self.test_df = None
-        self.initial_parameter_list = [' Fanout', ' Cap', ' Slew', ' Delay', 'X_drive', 'Y_drive', 'X_sink', 'Y_sink',
-                                       'C_drive', 'C_sink', 'X_context', 'Y_context', 'σ(X)_context', 'σ(Y)_context',
-                                       'Drive_cell_size', 'Sink_cell_size', 'Label Delay']
-        self.datasets_dict = datasets_dict
-        self.processed_datasets = {}
-        print(f"{self.test_name=}")
-        self.train_df, self.test_df = self.preprocessing()
+        self.filepaths_name = []
+        self.processed_dfs = []
+
+
+
+
+    def load_data(self, file_paths):
+        self.filepaths_name = file_paths
+        # for fp, index in enumerate(file_paths):
+        #     # if i == 0:
+        #     print(f"{fp=}, {index=}")
+        self.processed_dfs = [self.preprocessing(fp, index) for index, fp in enumerate(file_paths)]
+
         self.__print_info()
 
+    def corners(self, df):
 
-    def calculate_distance_parameter(self, *dfs):
-        result = []
+        if self.corner.lower().replace(" ", "")== 'fast':
+            fast_df = df.loc[df.groupby(df.columns[:].tolist())['Label Delay'].idxmin()] # todo: check [:]
+            fast_df = fast_df.reset_index(drop=True)
+            return fast_df
 
-        for df in dfs:
-            df['Distance'] = np.sqrt(
-                (df["X_drive"] - df["X_sink"]) ** 2 + (df["Y_drive"] - df["Y_sink"]) ** 2
-            )
-            df = df.drop(columns=['X_drive', 'Y_drive', 'X_sink', 'Y_sink'])
+        elif self.corner.lower().replace(" ", "")== 'slow':
+            slow_df = df.loc[df.groupby(df.columns[:].tolist())['Label Delay'].idxmax()]
+            slow_df = slow_df.reset_index(drop=True)
+            return slow_df
 
-            cols = df.columns.tolist()
-            cols.remove('Distance')
-            delay_idx = cols.index(' Delay')
-            new_cols_order = cols[:delay_idx + 1] + ['Distance'] + cols[delay_idx + 1:]
-            df = df[new_cols_order]
+        # TODO: typical filtering not working properly.
+        # elif self.corner.lower().replace(" ", "") == "typical":
+        #     grouped = df.groupby(df.columns[:16].tolist())
+        #     filtered_df = grouped.apply(get_quantile_row, quantile_value=0.5).reset_index(drop=True)
+        else:
+            raise ValueError(f"Unknown corner value '{self.corner}'. Currently, only 'fast' and 'slow' corners are "
+                             f"supported.")
+            return
 
-            result.append(df)
+    def scale_dataframes(self, df, index):
+        # first dataframe should be the training set, who will scale the following sets
+        if index == 0:
+            if self.feature_scaling == 'standard':
+                scaler = StandardScaler()
+                scaled = scaler.fit_transform(df)
+                df_scaled = pd.DataFrame(scaled, columns = df.columns)
+                with open('../temp/standard_scaler.pkl', 'wb') as f:
+                    pickle.dump(scaler, f)
 
-        return tuple(result)
 
-    def preprocessing(self):
+            elif self.feature_scaling == 'minmax':
+                scaler = MinMaxScaler()
+                scaled = scaler.fit_transform(df)
+                df_scaled = pd.DataFrame(scaled, columns=df.columns)
+                with open('../temp/minmax_scaler.pkl', 'wb') as f:
+                    pickle.dump(scaler, f)
+
+            else:
+                raise ValueError(f"Unknown feature_scaling value '{self.feature_scaling}'. Currently, only 'standard' "
+                                 f"and 'minmax' values are "
+                                 f"supported.")
+
+            return df_scaled
+
+        # if the df is not the first one in the list (or, is a test set)
+        else:
+            if self.feature_scaling == 'standard':
+                with open('../temp/standard_scaler.pkl', 'rb') as f:
+                    std_scaler = pickle.load(f)
+                test_scaled = std_scaler.transform(df)
+                df_test_scaled = pd.DataFrame(test_scaled, columns=df.columns)
+                return df_test_scaled
+
+            elif self.feature_scaling == 'minmax':
+                with open('../temp/minmax_scaler.pkl', 'rb') as f:
+                    minmax_scaler = pickle.load(f)
+                test_scaled = minmax_scaler.transform(df)
+                df_test_scaled = pd.DataFrame(test_scaled, columns=df.columns)
+                return df_test_scaled
+
+        raise ValueError("Unexpected exit")
+        return
+
+
+    def __calculate_distance_parameter(self, df):
+
+
+        df['Distance'] = np.sqrt(
+            (df["X_drive"] - df["X_sink"]) ** 2 + (df["Y_drive"] - df["Y_sink"]) ** 2
+        )
+        df = df.drop(columns=['X_drive', 'Y_drive', 'X_sink', 'Y_sink'])
+
+        cols = df.columns.tolist()
+        cols.remove('Distance')
+        delay_idx = cols.index(' Delay')
+        new_cols_order = cols[:delay_idx + 1] + ['Distance'] + cols[delay_idx + 1:]
+        df = df[new_cols_order]
+
+        return df
+
+    def preprocessing(self, data_filepath, index):
+        # index is i-th element on the list of dataframes to process. This way we can differ the first df from others
+        initial_parameter_list = [' Fanout', ' Cap', ' Slew', ' Delay', 'X_drive', 'Y_drive', 'X_sink', 'Y_sink',
+                                  'C_drive', 'C_sink', 'X_context', 'Y_context', 'σ(X)_context', 'σ(Y)_context',
+                                  'Drive_cell_size', 'Sink_cell_size', 'Label Delay', 'Design']
+
+
 
         if not self.context_features:
-            self.initial_parameter_list.remove("X_context")
-            self.initial_parameter_list.remove("Y_context")
+            initial_parameter_list.remove("X_context")
+            initial_parameter_list.remove("Y_context")
         if not self.std_dvt_context:
-            self.initial_parameter_list.remove("σ(X)_context")
-            self.initial_parameter_list.remove("σ(Y)_context")
+            initial_parameter_list.remove("σ(X)_context")
+            initial_parameter_list.remove("σ(Y)_context")
 
-        if self.train_data is not None:
-            self.train_df = pd.read_csv(self.train_data)[self.initial_parameter_list]
-        if self.test_data is not None:
-            self.test_df = pd.read_csv(self.test_data)
-            if self.test_name is not None and 'Design' in self.test_df:
-                self.test_df = self.test_df[self.test_df['Design'] == self.test_name]
-            self.test_df = self.test_df[self.initial_parameter_list]
+        df = pd.read_csv(data_filepath)
 
-            if self.distance_parameter:
-                self.train_df, self.test_df = self.calculate_distance_parameter(self.train_df, self.test_df)
-            if self.remove_nan:
-                self.train_df = self.train_df.dropna()
-                self.test_df = self.test_df.dropna()
+        if self.corner is not None:
+            df = self.corner(df)
 
 
 
 
-            return self.train_df, self.test_df
+        # df = df.head(5) # TODO: REMOVE THIS
+        cols_to_keep = [col for col in initial_parameter_list if col in df.columns]
+        df = df[cols_to_keep]
+        if self.test_name is not None:
+            if "Design" in cols_to_keep:
+                    df = df[df["Design"] == self.test_name]
 
-        elif self.files_dict is not None:
-            for output_name, input_file in self.datasets_dict.items():
-                df = pd.read_csv(input_file)[self.initial_parameter_list]
-                df = df.dropna() if self.remove_nan else df
-                # df = df[self.initial_parameter_list]
+            if df.empty:
 
-                if self.distance_parameter:
-                    df = self.calculate_distance_parameter(df)
+                raise ValueError(f"The design {self.test_name} is not in the file {data_filepath}. \n"
+                                 f"Remove the parameter 'test_design_name' or make sure the design exists inside the file.  ")
+        if 'Design' in df.columns:
+            df = df.drop(columns=["Design"])
 
-                self.processed_datasets[output_name] = input_file
+        if self.feature_scaling is not None:
+            df = self.scale_dataframes(df, index)
 
-            return self.processed_datasets
-        else:
-            raise ValueError("train or test datasets, or dictionary of datasets not found. ")
 
-    def to_csv(self, train_name = "processed_train", test_name = "processed_test"):
-        if self.train_data is not None and self.test_data is not None:
-            self.train_data.to_csv(f"../../datasets/processed/{train_name}.csv", index=False)
-            self.test_data.to_csv(f"../../datasets/processed/{test_name}.csv", index=False)
+        if self.distance_parameter:
+            df = self.__calculate_distance_parameter(df)
+        if self.remove_nan:
+            df = df.dropna()
 
-        elif self.processed_datasets is not None:
-            for output_name, input_file in self.processed_datasets.items():
-                input_file.to_csv(f"../../datasets/processed/{output_name}.csv", index=False)
-        else:
-            raise ValueError("train or test datasets missing, or processed_datasets (dict) is None ")
+        # else:
+        #     raise ValueError("train or test datasets, or dictionary of datasets not found. ")
+        return df
+
+
+
+    def to_csv(self, file_names = None, directory="../datasets/processed/"):
+        for i, df in enumerate(self.processed_dfs):
+            name = file_names[i] if file_names and i < len(file_names) else f"file_{i}.csv"
+            full_path = f"{directory.rstrip('/')}/{name}"
+            df.to_csv(full_path, index=False)
 
     def get_data(self):
-        if self.train_data is not None and self.test_data is not None:
-            return self.train_data, self.test_data
-        elif self.processed_datasets is not None:
-            return self.processed_datasets
-        else:
-            raise ValueError("train or test datasets missing, or processed_datasets (dict) is None ")
-
+        return tuple(self.processed_dfs)
     def __print_messages(self, message, message_level):
         if message_level <= self.verbose:
             print(message)
 
-    # __print_messages(self, 2, "hello")
+
 
     def __print_info(self):
         self.__print_messages("Processing class initiated", 1)
-        self.__print_messages(f"\t-{self.train_data=}", 2)
-        self.__print_messages(f"\t-{self.test_data=}", 2)
         self.__print_messages(f"\t-{self.corner=}", 2)
         self.__print_messages(f"\t-{self.context_features=}", 2)
         self.__print_messages(f"\t-{self.std_dvt_context=}", 2)
         self.__print_messages(f"\t-{self.remove_nan=}", 2)
         self.__print_messages(f"\t-{self.test_name=}", 2)
-        self.__print_messages(f"\t-{self.datasets_dict=}", 2)
+        self.__print_messages(f"\n", 2)
 
-        self.__print_messages("\t\tTrain Dataset:", 2)
-        self.__print_messages(f"\t\t\tTrain Shape: {self.train_df.shape}:", 2)
-        self.__print_messages(f"\t\t{self.train_df.head(5)}:", 2)
-        self.__print_messages("\t\tTest Dataset:", 2)
-        self.__print_messages(f"\t\t\tTest Shape: {self.test_df.shape}:", 2)
-        self.__print_messages(f"\t\t{self.test_df.head(5)}:", 2)
-    # train = None,
-    # test = None,
-    # corner = None,
-    # context_features = False,
-    # std_dvt_context = False,
-    # distance_parameter = True,
-    # datasets_dict = None,
-    # remove_nan = True,
-    # test_design_name = None,
-    # verbose = 1
+        for i, df in enumerate(self.processed_dfs):
+            self.__print_messages(f"\t\tDataset #{i}:", 2)
+            self.__print_messages(f"\t\t\tName: {self.filepaths_name[i]}:", 2)
+            self.__print_messages(f"\t\t\tShape: {df.shape}:", 2)
+            self.__print_messages(f"{df.head(5)}:", 2)
+

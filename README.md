@@ -42,6 +42,15 @@ hb_model.fit(X_train, y_train)  # train with fit() method
 y_pred = hb_model.predict(X_test)  # predict with predict() method
 ```
 
+Some of the hyperparameters of the decision tree are
+```python
+"""
+tree params={'ccp_alpha': 0.0, 'criterion': 'squared_error', 'max_depth': None, 'max_features': None, 'max_leaf_nodes': 
+None, 'min_impurity_decrease': 0.0, 'min_samples_leaf': 1, 'min_samples_split': 2, 'min_weight_fraction_leaf': 0.0, 
+'random_state': None, 'splitter': 'best'}
+"""
+```
+
 ### Data Preprocessing
 
 This class implements a way to access and modify training and testing datasets quickly. It's a wrapper for functions like
