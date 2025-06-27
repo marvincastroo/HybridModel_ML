@@ -14,7 +14,6 @@ This project heavily relies on the open source, RTL-to-GDSII tool [OpenLane](htt
 2.  [Usage](#usage)
 3.  [Dataset](#dataset)
 4.  [Model](#model)
-5.  [Evaluation](#evaluation)
 
 
 ## Installation
