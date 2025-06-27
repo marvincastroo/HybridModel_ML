@@ -1,6 +1,4 @@
 
-# HybridModel_ML
-=======
 # Hybrid Learning Model (Decision Tree + Linear Regression)
 
 ### A hybrid implementation of Scikit's Decision Tree and Linear Regressors intended to predict delays in digital integrated circuits. 
